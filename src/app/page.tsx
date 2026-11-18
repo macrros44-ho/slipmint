@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Printer, Lock, Sparkles, CheckCircle2, Upload, ShieldCheck } from "lucide-react";
+import { Plus, Trash2, Printer, Lock, Sparkles, CheckCircle2, Upload, ShieldCheck, KeyRound } from "lucide-react";
 
 interface InvoiceItem { id: string; description: string; quantity: number; price: number; }
 const CURRENCIES = [
@@ -8,7 +8,9 @@ const CURRENCIES = [
   { code: "EUR", symbol: "€", name: "Euro (€)" },
   { code: "GBP", symbol: "£", name: "British Pound (£)" },
 ];
-const CHECKOUT_URL = "https://lemonsqueezy.com";
+
+const CHECKOUT_URL = "https://buy.polar.sh/polar_cl_Fr5Yft91JLGpVKmIZNQFsSVGLWUIIZseqPlkZ1tgxQD";
+const POLAR_ORG_ID = "3851acd2-8bdb-481e-a441-00c674baad5a";
 
 export default function SlipMintApp() {
   const [isPro, setIsPro] = useState(false);
@@ -33,16 +35,56 @@ export default function SlipMintApp() {
   const [notes, setNotes] = useState("Thank you for your business! Payment is due within 14 days.");
   const [showProModal, setShowProModal] = useState(false);
 
+  const [licenseKey, setLicenseKey] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [licenseError, setLicenseError] = useState("");
+
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("pro") === "unlocked") {
-      localStorage.setItem("slipmint_pro", "true");
-      setIsPro(true);
-      window.history.replaceState({}, "", "/");
-    } else if (localStorage.getItem("slipmint_pro") === "true") {
+    const savedKey = localStorage.getItem("slipmint_license_key");
+    if (savedKey) {
       setIsPro(true);
     }
   }, []);
+
+  const handleActivateLicense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedKey = licenseKey.trim();
+    if (!trimmedKey) {
+      setLicenseError("Please enter your license key.");
+      return;
+    }
+
+    setVerifying(true);
+    setLicenseError("");
+
+    try {
+      const response = await fetch("https://api.polar.sh/v1/customer-portal/license-keys/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: trimmedKey,
+          organization_id: POLAR_ORG_ID,
+          label: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 60) : "Web Browser",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.id) {
+        localStorage.setItem("slipmint_license_key", trimmedKey);
+        localStorage.setItem("slipmint_activation_id", data.id);
+        setIsPro(true);
+        setShowProModal(false);
+        setLicenseKey("");
+      } else {
+        setLicenseError(data.detail || "Invalid license key or activation limit reached.");
+      }
+    } catch {
+      setLicenseError("Network error. Please try again.");
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.item(0);
@@ -68,7 +110,7 @@ export default function SlipMintApp() {
             {isPro ? (
               <span className="ml-2 text-xs bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full font-bold">PRO UNLOCKED</span>
             ) : (
-              <span className="ml-2 text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Free Instant Invoice</span>
+              <span className="ml-2 text-xs bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-medium">Free Instant Invoice</span>
             )}
           </div>
           <div className="flex items-center gap-3">
@@ -217,9 +259,34 @@ export default function SlipMintApp() {
               <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600" /> Upload your custom brand logo</li>
               <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600" /> Unlimited clean client-ready PDF exports</li>
             </ul>
-            <a href={CHECKOUT_URL} className="block text-center w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow cursor-pointer">
+            <a href={CHECKOUT_URL} target="_blank" rel="noopener noreferrer" className="block text-center w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow cursor-pointer">
               Get Lifetime Pro — $19
             </a>
+
+            <div className="pt-4 border-t border-slate-100">
+              <form onSubmit={handleActivateLicense} className="space-y-2">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                  <KeyRound className="w-3.5 h-3.5 text-emerald-600" /> Already purchased? Enter License Key
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="SLIP-XXXX-XXXX-XXXX"
+                    value={licenseKey}
+                    onChange={(e) => setLicenseKey(e.target.value)}
+                    className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono uppercase"
+                  />
+                  <button
+                    type="submit"
+                    disabled={verifying}
+                    className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white text-xs font-bold px-3.5 py-2 rounded-lg cursor-pointer"
+                  >
+                    {verifying ? "Checking..." : "Activate"}
+                  </button>
+                </div>
+                {licenseError && <p className="text-xs text-red-600">{licenseError}</p>}
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -236,7 +303,7 @@ export default function SlipMintApp() {
               <button onClick={() => setLegalModal(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">Close ✕</button>
             </div>
             {legalModal === "terms" && <p>SlipMint provides instant browser-based invoice generation tools provided &quot;as is&quot;. You are solely responsible for the accuracy of tax rates, billing details, and legal compliance of invoices you issue.</p>}
-            {legalModal === "privacy" && <p>We respect your privacy. All invoice data you type is processed locally in your browser and is never uploaded to our servers. Payments are securely processed by our Merchant of Record, Lemon Squeezy.</p>}
+            {legalModal === "privacy" && <p>We respect your privacy. All invoice data you type is processed locally in your browser and is never uploaded to our servers. Payments and license verification are securely processed by our Merchant of Record, Polar.sh (Polar Software, Inc.).</p>}
             {legalModal === "refund" && <p>Due to the instant digital nature of SlipMint Pro Lifetime Access, all sales are generally final once Pro features are unlocked. If you experience technical issues, contact macrros44@gmail.com within 7 days for assistance.</p>}
           </div>
         </div>
